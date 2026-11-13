@@ -1,0 +1,1 @@
+{"name":"pokepark-cloud-watcher","private":true,"type":"module","scripts":{"check":"node check.mjs"},"dependencies":{"playwright":"1.65.0"}}
