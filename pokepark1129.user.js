@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ポケパーク 11/29 先着チケット監視
 // @namespace    pokepark-watch
-// @version      1.2
+// @version      1.3
 // @description  購入カレンダーのページを60秒ごとに再読み込みし、11/29に空きが出たらスマホ(ntfy)とMacに通知
 // @match        https://www.pokepark-kanto.co.jp/ppark/ticket/dateSelect/index*
 // @grant        GM_xmlhttpRequest
@@ -17,6 +17,7 @@
   const testDate = (location.hash.match(/#test=(\d{4}-\d{2}-\d{2})/) || [])[1];
   const TARGET = testDate || "2026-11-29";
   const TOPIC = "pokepark1129-676239f978";
+  const MIN_STOCK = 2;  // 2名分買うので残2以上で通知
   const INTERVAL = 60 * 1000;
   const RENOTIFY = 30 * 60 * 1000;
   const BUY_URL = "https://www.pokepark-kanto.co.jp/ppark/ticket/dateSelect/index";
@@ -57,7 +58,7 @@
     const open = day?.linkFlg === 1 && day?.closedFlg === 0;
     show(`残${stock}（${now()}）`);
     const last = Number(localStorage.getItem("pp_last_sent") || 0);
-    if (open && stock > 0) {
+    if (open && stock >= MIN_STOCK) {
       if (testDate) {
         notify(`【テスト】空きあり！ポケパーク ${TARGET}`, `残${stock}枚（テスト通知です）`);
       } else if (Date.now() - last >= RENOTIFY) {
