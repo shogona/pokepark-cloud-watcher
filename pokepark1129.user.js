@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ポケパーク 11/29 先着チケット監視
 // @namespace    pokepark-watch
-// @version      1.3
+// @version      1.4
 // @description  購入カレンダーのページを60秒ごとに再読み込みし、11/29に空きが出たらスマホ(ntfy)とMacに通知
 // @match        https://www.pokepark-kanto.co.jp/ppark/ticket/dateSelect/index*
 // @grant        GM_xmlhttpRequest
@@ -27,6 +27,13 @@
     GM_setValue("email", email || "-");
   }
   if (email === "-") email = "";
+  // メール通知にはntfyアカウント(メール認証済み)のアクセストークンが必要
+  let token = GM_getValue("ntfy_token", "");
+  if (!token) {
+    token = (prompt("ポケパーク監視：ntfyのアクセストークン(tk_で始まる)を入力（メール不要なら空欄）") || "").trim();
+    GM_setValue("ntfy_token", token || "-");
+  }
+  if (token === "-") token = "";
   const now = () => new Date().toLocaleTimeString("ja-JP");
 
   const badge = document.createElement("div");
@@ -39,7 +46,7 @@
       method: "POST", url: `https://ntfy.sh/${TOPIC}`, data: `${title}\n${msg}`,
       headers: Object.assign(
         { Title: `PokePark ${TARGET}`, Priority: "urgent", Tags: "ticket", Click: BUY_URL },
-        email ? { Email: email } : {}),
+        token ? { Authorization: `Bearer ${token}`, Email: "yes" } : (email ? { Email: email } : {})),
     });
     GM_notification({ title, text: msg });
     try { new Audio("https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg").play(); } catch (e) {}
