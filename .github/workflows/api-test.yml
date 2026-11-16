@@ -1,0 +1,24 @@
+name: API取得テスト
+on:
+  push:
+    paths: [".github/workflows/api-test.yml"]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          mkdir -p results
+          URL="https://www.pokepark-kanto.co.jp/ppark/ticket/dateSelect/select?yearMonth=2026-11&isScheduleRequest=0&_=$(date +%s)000"
+          curl -sS -m 20 -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36" \
+            -H "X-Requested-With: XMLHttpRequest" -H "Referer: https://www.pokepark-kanto.co.jp/ppark/ticket/dateSelect/index" \
+            -o body.txt -w "status=%{http_code} type=%{content_type}\n" "$URL" > results/api-test.txt 2>&1 || true
+          head -c 600 body.txt >> results/api-test.txt || true
+          cat results/api-test.txt
+      - run: |
+          git config user.name github-actions && git config user.email github-actions@users.noreply.github.com
+          git add results && git commit -m "API取得テスト結果" && git push
