@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ポケパーク 11/29 先着チケット監視
 // @namespace    pokepark-watch
-// @version      1.4
+// @version      1.5
 // @description  購入カレンダーのページを60秒ごとに再読み込みし、11/29に空きが出たらスマホ(ntfy)とMacに通知
 // @match        https://www.pokepark-kanto.co.jp/ppark/ticket/dateSelect/index*
 // @grant        GM_xmlhttpRequest
@@ -42,12 +42,18 @@
   const show = (t) => { badge.textContent = `監視中 ${TARGET}: ${t}`; console.log("[pokepark]", t); };
 
   const notify = (title, msg) => {
-    GM_xmlhttpRequest({
-      method: "POST", url: `https://ntfy.sh/${TOPIC}`, data: `${title}\n${msg}`,
-      headers: Object.assign(
-        { Title: `PokePark ${TARGET}`, Priority: "urgent", Tags: "ticket", Click: BUY_URL },
-        token ? { Authorization: `Bearer ${token}`, Email: "yes" } : (email ? { Email: email } : {})),
+    const base = { Title: `PokePark ${TARGET}`, Priority: "urgent", Tags: "ticket", Click: BUY_URL };
+    const send = (headers, onFail) => GM_xmlhttpRequest({
+      method: "POST", url: `https://ntfy.sh/${TOPIC}`, data: `${title}\n${msg}`, headers,
+      onload: (r) => { console.log("[pokepark] ntfy", r.status, r.responseText); if (r.status >= 300 && onFail) onFail(); },
+      onerror: () => onFail && onFail(),
     });
+    if (token) {
+      // メール付きで送信。失敗したらメールなしでプッシュだけ送り直す
+      send(Object.assign({ Authorization: `Bearer ${token}`, Email: "yes" }, base), () => send(base));
+    } else {
+      send(base);  // 匿名ではメール送信不可(付けると通知ごと拒否される)
+    }
     GM_notification({ title, text: msg });
     try { new Audio("https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg").play(); } catch (e) {}
   };
