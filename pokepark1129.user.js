@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ポケパーク 11/29 先着チケット監視
 // @namespace    pokepark-watch
-// @version      1.6
+// @version      1.7
 // @description  購入カレンダーのページを60秒ごとに再読み込みし、11/29に空きが出たらスマホ(ntfy)とMacに通知
 // @match        https://www.pokepark-kanto.co.jp/ppark/ticket/dateSelect/index*
 // @grant        GM_xmlhttpRequest
@@ -9,6 +9,8 @@
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @connect      ntfy.sh
+// @connect      script.google.com
+// @connect      script.googleusercontent.com
 // @run-at       document-idle
 // ==/UserScript==
 
@@ -21,22 +23,14 @@
   const INTERVAL = 60 * 1000;
   const RENOTIFY = 30 * 60 * 1000;
   const BUY_URL = "https://www.pokepark-kanto.co.jp/ppark/ticket/dateSelect/index";
-  if (location.hash === "#reset") {  // 保存したメール・トークンを消して入れ直す
-    GM_setValue("email", ""); GM_setValue("ntfy_token", "");
+  if (location.hash === "#reset") GM_setValue("gas_url", "");  // メール送信用URLを入れ直す
+  let gasUrl = GM_getValue("gas_url", "");
+  if (!gasUrl) {
+    gasUrl = (prompt("ポケパーク監視：メール送信用のGASのURL(https://script.google.com/macros/s/.../exec)を入力（メール不要なら空欄）") || "").trim();
+    GM_setValue("gas_url", gasUrl || "-");
   }
-  let email = GM_getValue("email", "");
-  if (!email) {
-    email = (prompt("ポケパーク監視：通知を受け取るメールアドレスを入力（不要なら空欄でOK）") || "").trim();
-    GM_setValue("email", email || "-");
-  }
-  if (email === "-") email = "";
-  // メール通知にはntfyアカウント(メール認証済み)のアクセストークンが必要
-  let token = GM_getValue("ntfy_token", "");
-  if (!token) {
-    token = (prompt("ポケパーク監視：ntfyのアクセストークン(tk_で始まる)を入力（メール不要なら空欄）") || "").trim();
-    GM_setValue("ntfy_token", token || "-");
-  }
-  if (token === "-" || !token.startsWith("tk_")) token = "";
+  if (!gasUrl.startsWith("https://script.google.com/")) gasUrl = "";
+  const GAS_KEY = "hUUELMWcrSkLrl4V";
   const now = () => new Date().toLocaleTimeString("ja-JP");
 
   const badge = document.createElement("div");
@@ -51,11 +45,14 @@
       onload: (r) => { console.log("[pokepark] ntfy", r.status, r.responseText); if (r.status >= 300 && onFail) onFail(); },
       onerror: () => onFail && onFail(),
     });
-    if (token) {
-      // メール付きで送信。失敗したらメールなしでプッシュだけ送り直す
-      send(Object.assign({ Authorization: `Bearer ${token}`, Email: "yes" }, base), () => send(base));
-    } else {
-      send(base);  // 匿名ではメール送信不可(付けると通知ごと拒否される)
+    send(base);  // スマホ(ntfy)へプッシュ
+    if (gasUrl) {   // Gmailへメール(GAS経由)
+      GM_xmlhttpRequest({
+        method: "POST", url: gasUrl,
+        data: JSON.stringify({ key: GAS_KEY, subject: title, body: `${msg}\n\n今すぐ購入: ${BUY_URL}` }),
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        onload: (r) => console.log("[pokepark] mail", r.status, r.responseText),
+      });
     }
     GM_notification({ title, text: msg });
     try { new Audio("https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg").play(); } catch (e) {}
