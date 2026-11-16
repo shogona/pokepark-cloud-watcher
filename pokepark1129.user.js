@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ポケパーク 11/29 先着チケット監視（トレーナーズパス）
 // @namespace    pokepark-watch
-// @version      1.8
+// @version      1.9
 // @description  購入カレンダーのページを60秒ごとに再読み込みし、11/29に空きが出たらスマホ(ntfy)とMacに通知
 // @match        https://www.pokepark-kanto.co.jp/ppark/ticket/dateSelect/index*
 // @grant        GM_xmlhttpRequest
@@ -23,7 +23,10 @@
   const INTERVAL = 60 * 1000;
   const RENOTIFY = 30 * 60 * 1000;
   const BUY_URL = "https://www.pokepark-kanto.co.jp/ppark/ticket/dateSelect/index";
-  if (location.hash === "#reset") GM_setValue("gas_url", "");  // メール送信用URLを入れ直す
+  if (location.hash === "#reset") {  // メール送信用URLを入れ直す（URLから#resetを消して、再読み込みで繰り返さないようにする）
+    GM_setValue("gas_url", "");
+    history.replaceState(null, "", location.pathname);
+  }
   let gasUrl = GM_getValue("gas_url", "");
   if (!gasUrl) {
     gasUrl = (prompt("ポケパーク監視：メール送信用のGASのURL(https://script.google.com/macros/s/.../exec)を入力（メール不要なら空欄）") || "").trim();
@@ -86,6 +89,7 @@
   };
 
   if (location.hash === "#test") {  // 通知経路だけのテスト
+    history.replaceState(null, "", location.pathname);
     notify("PokePark テスト通知", "ブラウザ監視は正常に動いています");
   }
 
