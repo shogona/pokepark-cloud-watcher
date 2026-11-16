@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         ポケパーク 11/29 先着チケット監視
+// @name         ポケパーク 11/29 先着チケット監視（トレーナーズパス）
 // @namespace    pokepark-watch
-// @version      1.7
+// @version      1.8
 // @description  購入カレンダーのページを60秒ごとに再読み込みし、11/29に空きが出たらスマホ(ntfy)とMacに通知
 // @match        https://www.pokepark-kanto.co.jp/ppark/ticket/dateSelect/index*
 // @grant        GM_xmlhttpRequest
@@ -31,6 +31,33 @@
   }
   if (!gasUrl.startsWith("https://script.google.com/")) gasUrl = "";
   const GAS_KEY = "hUUELMWcrSkLrl4V";
+  const WANT = "トレーナーズパス";
+
+  // 「種類を選ぶ」画面を裏で読み込み、券種ごとの残り表示(○△×)を取得
+  const passStock = async (dateStr) => {
+    // CSRFトークンは使い回すと弾かれるので毎回取り直す
+    const idx = new DOMParser().parseFromString(
+      await (await fetch("/ppark/ticket/dateSelect/index", { credentials: "same-origin" })).text(), "text/html");
+    const csrf = idx.querySelector('#ticketPurchaseCommand input[name="_csrf"]')?.value;
+    if (!csrf) throw new Error("csrf not found");
+    const res = await fetch("/ppark/ticket/dateSelect/next", {
+      method: "POST", credentials: "same-origin",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ selectDate: dateStr, _csrf: csrf }),
+    });
+    const doc = new DOMParser().parseFromString(await res.text(), "text/html");
+    const result = {};
+    for (const el of doc.querySelectorAll(".ticket-stock")) {
+      let card = el;
+      while (card.parentElement && card.parentElement.querySelectorAll(".ticket-stock").length <= 2) card = card.parentElement;
+      const t = card.textContent.replace(/\s/g, "");
+      const name = t.includes("エリートトレーナーズパス") ? "エリートトレーナーズパス"
+        : t.includes("トレーナーズパス") ? "トレーナーズパス" : t.includes("タウンパス") ? "タウンパス" : null;
+      if (name) result[name] = el.textContent.replace(/\s|残り/g, "");
+    }
+    return result;  // 例: {エリートトレーナーズパス:"×", トレーナーズパス:"△", タウンパス:"×"}
+  };
+
   const now = () => new Date().toLocaleTimeString("ja-JP");
 
   const badge = document.createElement("div");
@@ -71,11 +98,18 @@
     const open = day?.linkFlg === 1 && day?.closedFlg === 0;
     show(`残${stock}（${now()}）`);
     const last = Number(localStorage.getItem("pp_last_sent") || 0);
+    let mark = "-";
     if (open && stock >= MIN_STOCK) {
+      const passes = await passStock(TARGET);
+      mark = passes[WANT] || "?";
+      show(`残${stock} / ${WANT}${mark}（${now()}）`);
+    }
+    if (mark === "○" || mark === "△") {
+      const label = mark === "○" ? "残りあり" : "残りわずか";
       if (testDate) {
-        notify(`【テスト】空きあり！ポケパーク ${TARGET}`, `残${stock}枚（テスト通知です）`);
+        notify(`【テスト】${WANT}空き！ポケパーク ${TARGET}`, `${WANT}：${label}（テスト通知です）`);
       } else if (Date.now() - last >= RENOTIFY) {
-        notify(`空きあり！ポケパーク ${TARGET}`, `残${stock}枚。今すぐ購入してください`);
+        notify(`${WANT}空き！ポケパーク ${TARGET}`, `${WANT}：${label}。今すぐ購入してください`);
         localStorage.setItem("pp_last_sent", String(Date.now()));
       }
     } else if (!testDate) {
