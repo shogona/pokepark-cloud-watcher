@@ -1,11 +1,13 @@
 // ==UserScript==
 // @name         ポケパーク 11/29 先着チケット監視
 // @namespace    pokepark-watch
-// @version      1.0
+// @version      1.1
 // @description  購入カレンダーのページを60秒ごとに再読み込みし、11/29に空きが出たらスマホ(ntfy)とMacに通知
 // @match        https://www.pokepark-kanto.co.jp/ppark/ticket/dateSelect/index*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_notification
+// @grant        GM_getValue
+// @grant        GM_setValue
 // @connect      ntfy.sh
 // @run-at       document-idle
 // ==/UserScript==
@@ -16,6 +18,12 @@
   const INTERVAL = 60 * 1000;
   const RENOTIFY = 30 * 60 * 1000;
   const BUY_URL = "https://www.pokepark-kanto.co.jp/ppark/ticket/dateSelect/index";
+  let email = GM_getValue("email", "");
+  if (!email) {
+    email = (prompt("ポケパーク監視：通知を受け取るメールアドレスを入力（不要なら空欄でOK）") || "").trim();
+    GM_setValue("email", email || "-");
+  }
+  if (email === "-") email = "";
   const now = () => new Date().toLocaleTimeString("ja-JP");
 
   const badge = document.createElement("div");
@@ -26,7 +34,9 @@
   const notify = (title, msg) => {
     GM_xmlhttpRequest({
       method: "POST", url: `https://ntfy.sh/${TOPIC}`, data: `${title}\n${msg}`,
-      headers: { Title: `PokePark ${TARGET}`, Priority: "urgent", Tags: "ticket", Click: BUY_URL },
+      headers: Object.assign(
+        { Title: `PokePark ${TARGET}`, Priority: "urgent", Tags: "ticket", Click: BUY_URL },
+        email ? { Email: email } : {}),
     });
     GM_notification({ title, text: msg });
     try { new Audio("https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg").play(); } catch (e) {}
