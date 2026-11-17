@@ -1,9 +1,11 @@
 // ==UserScript==
 // @name         ポケパーク 11/29 先着チケット監視（トレーナーズパス）
 // @namespace    pokepark-watch
-// @version      1.9
+// @version      2.0
 // @description  購入カレンダーのページを60秒ごとに再読み込みし、11/29に空きが出たらスマホ(ntfy)とMacに通知
 // @match        https://www.pokepark-kanto.co.jp/ppark/ticket/dateSelect/index*
+// @match        https://www.pokepark-kanto.co.jp/ppark/ticket/dateSelect/error*
+// @match        https://www.pokepark-kanto.co.jp/ppark/*error*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_notification
 // @grant        GM_getValue
@@ -15,6 +17,22 @@
 // ==/UserScript==
 
 (async () => {
+  // サイトのエラーページに飛ばされたら、3分後に監視ページへ戻る（30分以上続いたら一度だけ通知）
+  if (!location.pathname.includes("/dateSelect/index")) {
+    const since = Number(localStorage.getItem("pp_err_since") || 0) || Date.now();
+    localStorage.setItem("pp_err_since", String(since));
+    const b = document.createElement("div");
+    b.style.cssText = "position:fixed;top:8px;right:8px;z-index:99999;background:#a00;color:#fff;padding:6px 10px;border-radius:8px;font:12px sans-serif";
+    b.textContent = `監視：エラーページ。3分後に自動で戻ります（${new Date().toLocaleTimeString("ja-JP")}）`;
+    document.body.appendChild(b);
+    if (Date.now() - since > 30 * 60 * 1000 && !localStorage.getItem("pp_err_notified")) {
+      localStorage.setItem("pp_err_notified", "1");
+      GM_xmlhttpRequest({ method: "POST", url: "https://ntfy.sh/pokepark1129-676239f978",
+        data: "ポケパーク監視：サイトのエラーが30分以上続いています" });
+    }
+    setTimeout(() => location.replace("https://www.pokepark-kanto.co.jp/ppark/ticket/dateSelect/index"), 3 * 60 * 1000);
+    return;
+  }
   // URL末尾に #test=2026-12-01 のように付けると、その日付で1回だけテスト(必ず通知)して通常監視に戻る
   const testDate = (location.hash.match(/#test=(\d{4}-\d{2}-\d{2})/) || [])[1];
   const TARGET = testDate || "2026-11-29";
@@ -97,7 +115,10 @@
     const res = await fetch(`/ppark/ticket/dateSelect/select?yearMonth=${TARGET.slice(0, 7)}&isScheduleRequest=0&_=${Date.now()}`,
       { headers: { "X-Requested-With": "XMLHttpRequest" } });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const day = (await res.json()).dates.find((d) => d.date === TARGET);
+    const json = await res.json();
+    if (json.result !== "OK") throw new Error(`サイト応答NG ${json.resultCode || ""}`);
+    localStorage.removeItem("pp_err_since"); localStorage.removeItem("pp_err_notified");
+    const day = json.dates.find((d) => d.date === TARGET);
     const stock = day?.stockCount || 0;
     const open = day?.linkFlg === 1 && day?.closedFlg === 0;
     show(`残${stock}（${now()}）`);
