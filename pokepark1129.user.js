@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ポケパーク 11/29 先着チケット監視（トレーナーズパス）
 // @namespace    pokepark-watch
-// @version      2.0
+// @version      2.1
 // @description  購入カレンダーのページを60秒ごとに再読み込みし、11/29に空きが出たらスマホ(ntfy)とMacに通知
 // @match        https://www.pokepark-kanto.co.jp/ppark/ticket/dateSelect/index*
 // @match        https://www.pokepark-kanto.co.jp/ppark/ticket/dateSelect/error*
@@ -111,9 +111,18 @@
     notify("PokePark テスト通知", "ブラウザ監視は正常に動いています");
   }
 
+  // ページは再読み込みせず、データだけ1分ごとに取りに行く（Wi-Fiが落ちても、戻れば自動で再開）
+  let fails = 0;
+  const check = async () => {
+  if (!navigator.onLine) { show(`オフライン。回線の復帰を待っています（${now()}）`); return; }
   try {
     const res = await fetch(`/ppark/ticket/dateSelect/select?yearMonth=${TARGET.slice(0, 7)}&isScheduleRequest=0&_=${Date.now()}`,
       { headers: { "X-Requested-With": "XMLHttpRequest" } });
+    if (res.status === 403) {  // ボット確認の期限切れ。オンラインのときだけページを開き直して確認を通す
+      show(`確認の更新のため再読み込み（${now()}）`);
+      location.reload();
+      return;
+    }
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const json = await res.json();
     if (json.result !== "OK") throw new Error(`サイト応答NG ${json.resultCode || ""}`);
@@ -140,9 +149,16 @@
     } else if (!testDate) {
       localStorage.removeItem("pp_last_sent");
     }
+    fails = 0;
   } catch (e) {
-    show(`取得エラー ${e.message}（${now()}）`);
+    fails++;
+    show(`取得エラー${fails}回目 ${e.message}（${now()}）`);
   }
-  if (testDate) setTimeout(() => location.replace(BUY_URL), 15000);  // テスト後は通常の11/29監視へ
-  else setTimeout(() => location.reload(), INTERVAL);
+  };
+  await check();
+  if (testDate) { setTimeout(() => location.replace(BUY_URL), 15000); return; }  // テスト後は通常の11/29監視へ
+  setInterval(check, INTERVAL);
+  window.addEventListener("online", check);  // 回線が戻ったらすぐ確認
+  // 念のため、オンラインのときだけ30分ごとにページを開き直す
+  setInterval(() => { if (navigator.onLine) location.reload(); }, 30 * 60 * 1000);
 })();
