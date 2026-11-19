@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ポケパーク 11/29 先着チケット監視（トレーナーズパス）
 // @namespace    pokepark-watch
-// @version      2.1
+// @version      2.2
 // @description  購入カレンダーのページを60秒ごとに再読み込みし、11/29に空きが出たらスマホ(ntfy)とMacに通知
 // @match        https://www.pokepark-kanto.co.jp/ppark/ticket/dateSelect/index*
 // @match        https://www.pokepark-kanto.co.jp/ppark/ticket/dateSelect/error*
@@ -84,7 +84,21 @@
   const badge = document.createElement("div");
   badge.style.cssText = "position:fixed;top:8px;right:8px;z-index:99999;background:#222;color:#fff;padding:6px 10px;border-radius:8px;font:12px sans-serif;opacity:.85";
   document.body.appendChild(badge);
-  const show = (t) => { badge.textContent = `監視中 ${TARGET}: ${t}`; console.log("[pokepark]", t); };
+  let lastOk = "まだなし";
+  const show = (t, ok = false) => {
+    if (ok) lastOk = new Date().toLocaleTimeString("ja-JP");
+    badge.style.background = ok ? "#222" : "#a00";
+    badge.textContent = `監視中 ${TARGET}: ${t}／最終取得成功 ${lastOk}`;
+    console.log("[pokepark]", t);
+  };
+  // 本当にサイトまで届くか確かめる（Wi-Fiにつながっていてもネットが切れていることがあるため）
+  const reachable = async () => {
+    try {
+      const r = await fetch(`/ppark/ticket/dateSelect/select?yearMonth=${TARGET.slice(0, 7)}&isScheduleRequest=0&_=${Date.now()}`,
+        { headers: { "X-Requested-With": "XMLHttpRequest" } });
+      return r.status === 200 || r.status === 403;
+    } catch (e) { return false; }
+  };
 
   const notify = (title, msg) => {
     const base = { Title: `PokePark ${TARGET}`, Priority: "urgent", Tags: "ticket", Click: BUY_URL };
@@ -130,13 +144,13 @@
     const day = json.dates.find((d) => d.date === TARGET);
     const stock = day?.stockCount || 0;
     const open = day?.linkFlg === 1 && day?.closedFlg === 0;
-    show(`残${stock}（${now()}）`);
+    show(`残${stock}（${now()}）`, true);
     const last = Number(localStorage.getItem("pp_last_sent") || 0);
     let mark = "-";
     if (open && stock >= MIN_STOCK) {
       const passes = await passStock(TARGET);
       mark = passes[WANT] || "?";
-      show(`残${stock} / ${WANT}${mark}（${now()}）`);
+      show(`残${stock} / ${WANT}${mark}（${now()}）`, true);
     }
     if (mark === "○" || mark === "△") {
       const label = mark === "○" ? "残りあり" : "残りわずか";
@@ -159,6 +173,6 @@
   if (testDate) { setTimeout(() => location.replace(BUY_URL), 15000); return; }  // テスト後は通常の11/29監視へ
   setInterval(check, INTERVAL);
   window.addEventListener("online", check);  // 回線が戻ったらすぐ確認
-  // 念のため、オンラインのときだけ30分ごとにページを開き直す
-  setInterval(() => { if (navigator.onLine) location.reload(); }, 30 * 60 * 1000);
+  // 念のため、サイトに届くときだけ30分ごとにページを開き直す（ネットが切れているときは開き直さない）
+  setInterval(async () => { if (await reachable()) location.reload(); }, 30 * 60 * 1000);
 })();
